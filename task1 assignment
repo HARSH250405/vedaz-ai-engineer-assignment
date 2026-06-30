@@ -1,0 +1,256 @@
+# task1_chat_checker.py
+"""
+Chat Checker Script - Task 1
+Reads a .jsonl file of chats and generates a comprehensive quality report
+"""
+import json
+import re
+from collections import Counter
+from difflib import SequenceMatcher
+from typing import Dict, List, Tuple, Any
+import argparse
+from pathlib import Path
+
+class ChatChecker:
+    def __init__(self):
+        # Safety rules with keywords and patterns
+        self.safety_patterns = {
+            'death_prediction': [
+                r'\b(death|die|dying|fatal|mortal|kill|murder)\b',
+                r'\b(grah|planet).*(bad|negative|harmful).*(death|die)',
+                r'[0-9]+.*(years|year).*(death|die)'
+            ],
+            'illness_prediction': [
+                r'\b(cancer|tumor|disease|sick|illness|ailment)\b',
+                r'\b(health problem|medical condition|chronic)\b',
+                r'\b(will get sick|will fall ill|contract a disease)\b'
+            ],
+            'guaranteed_promise': [
+                r'\b(guarantee|100%|sure|definitely|certainly)\b.*\b(will|shall)\b',
+                r'\b(promise|assure|swear).*(result|money|love|marriage)',
+                r'\b(only way|must|compulsory|necessary).*(pay|buy|remedy)'
+            ],
+            'financial_pressure': [
+                r'\b(pay|money|rupees|dollars|cost).*(now|immediately|urgent)',
+                r'\b(if you don\'t pay|without payment).*(bad|suffer)',
+                r'\b(expensive|costly|premium).*(remedy|service)'
+            ],
+            'fear_mongering': [
+                r'\b(terrible|horrible|awful|catastrophic).*(future|fate)',
+                r'\b(only chance|last opportunity|final warning)',
+                r'\b(disaster|calamity|tragedy).*(coming|approaching)'
+            ]
+        }
+        
+    def load_chats(self, filepath: str) -> List[Dict]:
+        """Load chats from JSONL file"""
+        chats = []
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    try:
+                        chats.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        print(f"Warning: Could not parse line: {line[:100]}...")
+        return chats
+    
+    def validate_shape(self, chat: Dict) -> Tuple[bool, str]:
+        """Validate chat has correct structure"""
+        if 'messages' not in chat:
+            return False, "Missing 'messages' key"
+        
+        messages = chat['messages']
+        if not messages:
+            return False, "Empty messages list"
+        
+        if messages[0].get('role') != 'system':
+            return False, "First message must be from system"
+        
+        # Check alternating user/assistant after system
+        expected_role = 'user'
+        for i, msg in enumerate(messages[1:], 1):
+            if msg.get('role') != expected_role:
+                return False, f"Expected {expected_role} at position {i}, got {msg.get('role')}"
+            expected_role = 'assistant' if expected_role == 'user' else 'user'
+        
+        # Check each message has content
+        for i, msg in enumerate(messages):
+            if 'content' not in msg or not msg['content'].strip():
+                return False, f"Message {i} missing content"
+        
+        return True, "Valid"
+    
+    def count_words(self, text: str) -> int:
+        """Count words in text"""
+        return len(re.findall(r'\w+', text))
+    
+    def count_tokens_approx(self, text: str) -> int:
+        """Approximate token count (rough: 1 token ≈ 4 characters for English)"""
+        return len(text) // 4
+    
+    def check_safety(self, chat: Dict) -> Dict[str, List[str]]:
+        """Check chat for safety rule violations"""
+        violations = {}
+        full_text = ' '.join([msg['content'] for msg in chat['messages']])
+        
+        for rule_name, patterns in self.safety_patterns.items():
+            found_patterns = []
+            for pattern in patterns:
+                if re.search(pattern, full_text, re.IGNORECASE):
+                    found_patterns.append(pattern)
+            if found_patterns:
+                violations[rule_name] = found_patterns
+        
+        return violations
+    
+    def is_duplicate(self, chat1: Dict, chat2: Dict, threshold: float = 0.85) -> bool:
+        """Check if two chats are near-duplicates"""
+        text1 = ' '.join([msg['content'] for msg in chat1['messages']])
+        text2 = ' '.join([msg['content'] for msg in chat2['messages']])
+        similarity = SequenceMatcher(None, text1, text2).ratio()
+        return similarity >= threshold
+    
+    def find_duplicates(self, chats: List[Dict]) -> List[Tuple[int, int, float]]:
+        """Find duplicate and near-duplicate chats"""
+        duplicates = []
+        for i in range(len(chats)):
+            for j in range(i+1, len(chats)):
+                if self.is_duplicate(chats[i], chats[j]):
+                    duplicates.append((i, j, 0.9))  # Threshold already applied
+        return duplicates
+    
+    def split_train_test(self, chats: List[Dict], test_ratio: float = 0.2) -> Tuple[List[Dict], List[Dict]]:
+        """Split chats into training and test sets"""
+        # Simple split - in production, use stratified sampling
+        split_idx = int(len(chats) * (1 - test_ratio))
+        return chats[:split_idx], chats[split_idx:]
+    
+    def generate_report(self, filepath: str) -> Dict:
+        """Generate comprehensive report"""
+        chats = self.load_chats(filepath)
+        report = {
+            'total_chats': len(chats),
+            'valid_chats': 0,
+            'shape_errors': [],
+            'message_counts': [],
+            'word_counts': [],
+            'token_counts': [],
+            'safety_violations': {},
+            'duplicates': [],
+            'train_test_split': {}
+        }
+        
+        violation_counts = Counter()
+        
+        for idx, chat in enumerate(chats):
+            # Shape validation
+            is_valid, error = self.validate_shape(chat)
+            if is_valid:
+                report['valid_chats'] += 1
+            else:
+                report['shape_errors'].append((idx, error))
+            
+            # Count lengths
+            full_text = ' '.join([msg['content'] for msg in chat['messages']])
+            word_count = self.count_words(full_text)
+            token_count = self.count_tokens_approx(full_text)
+            report['word_counts'].append(word_count)
+            report['token_counts'].append(token_count)
+            report['message_counts'].append(len(chat['messages']))
+            
+            # Safety checks
+            violations = self.check_safety(chat)
+            if violations:
+                for rule, patterns in violations.items():
+                    violation_counts[rule] += 1
+                    if rule not in report['safety_violations']:
+                        report['safety_violations'][rule] = []
+                    report['safety_violations'][rule].append(idx)
+        
+        # Find duplicates
+        report['duplicates'] = self.find_duplicates(chats)
+        
+        # Train-test split
+        train, test = self.split_train_test(chats)
+        report['train_test_split'] = {
+            'train_size': len(train),
+            'test_size': len(test),
+            'train_indices': list(range(len(train))),
+            'test_indices': list(range(len(train), len(train) + len(test)))
+        }
+        
+        # Summary statistics
+        report['summary'] = {
+            'avg_words': sum(report['word_counts']) / len(report['word_counts']) if report['word_counts'] else 0,
+            'avg_tokens': sum(report['token_counts']) / len(report['token_counts']) if report['token_counts'] else 0,
+            'avg_messages': sum(report['message_counts']) / len(report['message_counts']) if report['message_counts'] else 0,
+            'safety_violation_summary': dict(violation_counts),
+            'duplicate_count': len(report['duplicates']),
+            'invalid_count': len(report['shape_errors'])
+        }
+        
+        return report
+    
+    def print_report(self, report: Dict):
+        """Pretty print the report"""
+        print("=" * 60)
+        print("CHAT QUALITY REPORT")
+        print("=" * 60)
+        
+        print(f"\n📊 Overview:")
+        print(f"  Total chats: {report['total_chats']}")
+        print(f"  Valid chats: {report['valid_chats']}")
+        print(f"  Invalid chats: {report['total_chats'] - report['valid_chats']}")
+        
+        print(f"\n📏 Length Statistics:")
+        print(f"  Average words per chat: {report['summary']['avg_words']:.1f}")
+        print(f"  Average tokens per chat: {report['summary']['avg_tokens']:.1f}")
+        print(f"  Average messages per chat: {report['summary']['avg_messages']:.1f}")
+        
+        print(f"\n🔄 Train/Test Split:")
+        print(f"  Training set: {report['train_test_split']['train_size']} chats")
+        print(f"  Test set: {report['train_test_split']['test_size']} chats")
+        
+        print(f"\n⚠️ Safety Violations:")
+        if report['safety_violations']:
+            for rule, count in report['summary']['safety_violation_summary'].items():
+                print(f"  {rule}: {count} chats")
+            print(f"  Total unique chats with violations: {len(set().union(*report['safety_violations'].values()))}")
+        else:
+            print("  ✅ No safety violations found!")
+        
+        print(f"\n🔄 Duplicate Chats:")
+        if report['duplicates']:
+            print(f"  Found {len(report['duplicates'])} duplicate pairs")
+        else:
+            print("  ✅ No duplicates found!")
+        
+        print(f"\n❌ Shape Errors:")
+        if report['shape_errors']:
+            print(f"  {len(report['shape_errors'])} chats have shape errors:")
+            for idx, error in report['shape_errors'][:5]:
+                print(f"    Chat {idx}: {error}")
+            if len(report['shape_errors']) > 5:
+                print(f"    ... and {len(report['shape_errors']) - 5} more")
+        else:
+            print("  ✅ All chats have valid shape!")
+        
+        print("\n" + "=" * 60)
+
+def main():
+    parser = argparse.ArgumentParser(description='Check chat quality')
+    parser.add_argument('input_file', help='Path to JSONL file')
+    args = parser.parse_args()
+    
+    checker = ChatChecker()
+    report = checker.generate_report(args.input_file)
+    checker.print_report(report)
+    
+    # Save report to file
+    output_file = Path(args.input_file).stem + '_report.json'
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(report, f, indent=2, default=str)
+    print(f"\n📄 Detailed report saved to: {output_file}")
+
+if __name__ == "__main__":
+    main()
