@@ -56,6 +56,6 @@ All original 15 example chats were reviewed. The 5 new chats were created based 
 
 ## Contact
 
-[Your Email/LinkedIn]
+[hvs25machine@gmail.com]
 
 
