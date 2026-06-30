@@ -1,0 +1,182 @@
+# task2_chat_generator.py
+"""
+Chat Generator Script - Task 2
+Uses AI to generate new example chats in Vedaz style
+"""
+import os
+import json
+import argparse
+from typing import Dict, List, Optional
+import time
+from pathlib import Path
+import random
+
+# Using OpenAI API as example - can be swapped with Together AI
+from openai import OpenAI
+
+class ChatGenerator:
+    def __init__(self, model: str = "gpt-3.5-turbo", safety_threshold: float = 0.8):
+        self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        self.model = model
+        self.safety_threshold = safety_threshold
+        self.safety_keywords = [
+            "death", "die", "fatal", "cancer", "tumor", "guarantee", "100%",
+            "sure", "definitely", "must pay", "only way", "last chance",
+            "disaster", "calamity", "compulsory", "necessary"
+        ]
+        
+    def generate_chat(self, topic: str) -> Optional[Dict]:
+        """Generate a single chat using AI"""
+        prompt = f"""Generate a realistic astrology consultation chat about: {topic}
+
+Format as a JSON object with a 'messages' array containing alternating user and assistant messages.
+The first message must be from 'system' with a brief persona description.
+
+Example format:
+{{
+  "messages": [
+    {{"role": "system", "content": "You are a warm, empathetic Vedic astrologer who is honest about astrology's limitations."}},
+    {{"role": "user", "content": "User question here"}},
+    {{"role": "assistant", "content": "Astrologer's warm response"}}
+  ]
+}}
+
+Requirements:
+1. Sound like Vedaz - warm, empathetic, honest, acknowledges uncertainty
+2. Include 3-5 exchanges
+3. Must NOT predict death, disease, or guarantee specific outcomes
+4. Stay honest about astrology being guidance, not certainty
+5. Use Indian cultural context naturally
+
+Return ONLY valid JSON, no other text."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.8,
+                max_tokens=1000
+            )
+            
+            # Parse JSON response
+            content = response.choices[0].message.content
+            # Clean up markdown if present
+            content = content.strip()
+            if content.startswith('```json'):
+                content = content[7:]
+            if content.endswith('```'):
+                content = content[:-3]
+            
+            chat = json.loads(content)
+            return chat
+            
+        except Exception as e:
+            print(f"Error generating chat: {e}")
+            return None
+    
+    def validate_chat_safety(self, chat: Dict) -> Tuple[bool, List[str]]:
+        """Validate safety of generated chat"""
+        violations = []
+        
+        # Check for safety keywords
+        full_text = ' '.join([msg['content'] for msg in chat['messages']]).lower()
+        
+        for keyword in self.safety_keywords:
+            if keyword in full_text:
+                violations.append(f"Contains '{keyword}'")
+        
+        # Check for guarantees or certainty
+        certainty_patterns = ['definitely', 'guarantee', '100%', 'sure', 'will happen']
+        for pattern in certainty_patterns:
+            if pattern in full_text:
+                # Check context - if saying "cannot guarantee" is ok
+                if f"cannot {pattern}" not in full_text and f"can't {pattern}" not in full_text:
+                    violations.append(f"Contains certainty: '{pattern}'")
+        
+        # Check shape
+        if len(chat.get('messages', [])) < 3:
+            violations.append("Too few messages")
+        
+        return len(violations) == 0, violations
+    
+    def generate_and_filter(self, topics: List[str], target_count: int = 10) -> List[Dict]:
+        """Generate multiple chats and filter for quality"""
+        good_chats = []
+        attempts = 0
+        max_attempts = target_count * 3
+        
+        print(f"🎯 Generating {target_count} chats...")
+        
+        while len(good_chats) < target_count and attempts < max_attempts:
+            attempts += 1
+            topic = random.choice(topics)
+            
+            print(f"  Attempt {attempts}: Generating chat about '{topic}'...")
+            
+            chat = self.generate_chat(topic)
+            if not chat:
+                continue
+            
+            is_safe, violations = self.validate_chat_safety(chat)
+            
+            if is_safe:
+                good_chats.append(chat)
+                print(f"    ✅ Generated {len(good_chats)}/{target_count} good chats")
+            else:
+                print(f"    ❌ Rejected: {', '.join(violations[:2])}")
+            
+            # Rate limiting
+            time.sleep(0.5)
+        
+        print(f"\n✅ Generated {len(good_chats)} safe chats in {attempts} attempts")
+        return good_chats
+    
+    def save_chats(self, chats: List[Dict], output_file: str):
+        """Save chats to JSONL file"""
+        with open(output_file, 'w', encoding='utf-8') as f:
+            for chat in chats:
+                f.write(json.dumps(chat, ensure_ascii=False) + '\n')
+        print(f"💾 Saved {len(chats)} chats to {output_file}")
+
+def main():
+    parser = argparse.ArgumentParser(description='Generate example chats')
+    parser.add_argument('--count', type=int, default=10, help='Number of chats to generate')
+    parser.add_argument('--output', default='generated_chats.jsonl', help='Output file')
+    args = parser.parse_args()
+    
+    # Sample topics - mix of common astrology queries
+    topics = [
+        "career delay, Hindi-speaking user",
+        "marriage compatibility, skeptical user",
+        "health concerns, anxious user",
+        "business growth, Gujarati context",
+        "relationship advice, emotional user",
+        "manglik dosha concerns, worried mother",
+        "education and studies, young adult",
+        "financial planning, middle-aged professional",
+        "love marriage conflict, traditional family",
+        "career change, confused professional",
+        "child birth astrology, expectant parents",
+        "house purchase astrology, Tamil context",
+        "litigation and legal matters, stressed individual",
+        "business partnership, Bengali context",
+        "government job prospects, competitive exam aspirant"
+    ]
+    
+    generator = ChatGenerator()
+    good_chats = generator.generate_and_filter(topics, args.count)
+    
+    if good_chats:
+        generator.save_chats(good_chats, args.output)
+        
+        # Also run checker on generated chats
+        print("\n🔍 Running safety check on generated chats...")
+        from task1_chat_checker import ChatChecker
+        checker = ChatChecker()
+        report = checker.generate_report(args.output)
+        checker.print_report(report)
+    else:
+        print("❌ Failed to generate any valid chats")
+
+if __name__ == "__main__":
+    main()
