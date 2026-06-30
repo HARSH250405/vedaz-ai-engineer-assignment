@@ -1,0 +1,25 @@
+vedaz-ai-engineer-assignment/
+│
+├── README.md
+├── requirements.txt
+├── .env.example
+├── .gitignore
+│
+├── src/
+│   ├── checker.py
+│   ├── generator.py
+│   ├── evaluator.py
+│   ├── safety.py
+│   ├── llm.py
+│   └── prompts.py
+│
+├── data/
+│   ├── sample_chats.jsonl
+│   ├── generated_chats.jsonl
+│   ├── train.jsonl
+│   └── test.jsonl
+│
+└── outputs/
+    ├── checker_report.json
+    ├── evaluation_results.csv
+    └── evaluation_summary.md
