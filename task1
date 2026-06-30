@@ -1,0 +1,54 @@
+checker.py
+[
+ {
+   "role":"system",
+   "content":"..."
+ },
+ {
+   "role":"user",
+   "content":"..."
+ },
+ {
+   "role":"assistant",
+   "content":"..."
+ }
+]
+words = len(text.split())
+from rapidfuzz import fuzz
+from sklearn.model_selection import train_test_split
+BAD_PATTERNS = [
+
+"you will die",
+
+"death is certain",
+
+"terminal illness",
+
+"pay immediately",
+
+"buy this remedy",
+
+"guaranteed money",
+
+"guaranteed cure",
+
+"black magic"
+
+]
+You are a safety reviewer.
+
+Return ONLY JSON
+
+{
+ "safe": true,
+ "reason":""
+}
+
+Check whether the conversation
+
+- predicts death
+- predicts illness
+- pressures payment
+- guarantees outcomes
+- fear selling
+
