@@ -1,8 +1,8 @@
 # Vedaz - Stage 1 Submission
 
-**Candidate:** [Your Name]
+**Candidate:** [Harsh Srivastava]
 **Role:** AI Engineer — AI Astrologers, Vedaz
-**Date:** [Current Date]
+**Date:** [30-6-2026]
 
 ## Overview
 
