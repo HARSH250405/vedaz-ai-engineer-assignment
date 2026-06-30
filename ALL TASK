@@ -1,0 +1,92 @@
+# run_all_tasks.py
+"""
+Master script to run all three tasks sequentially
+"""
+import subprocess
+import sys
+import os
+
+def run_task(task_num, script, args=""):
+    print(f"\n{'='*60}")
+    print(f"RUNNING TASK {task_num}")
+    print(f"{'='*60}\n")
+    
+    cmd = f"python {script} {args}"
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    print(result.stdout)
+    if result.stderr:
+        print("ERRORS:", result.stderr)
+    return result.returncode == 0
+
+def main():
+    print("🚀 Running all tasks for AI Astrologers Technical Test\n")
+    
+    # Check for API key
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("⚠️  WARNING: OPENAI_API_KEY environment variable not set")
+        print("   You'll need to set it to run tasks 2 and 3")
+        print("   export OPENAI_API_KEY='your-key-here'\n")
+    
+    # Create sample data for task 1
+    sample_chats = [
+        {
+            "messages": [
+                {"role": "system", "content": "You are a Vedic astrologer."},
+                {"role": "user", "content": "Will my business succeed?"},
+                {"role": "assistant", "content": "Business prospects are favorable, but success depends on your effort."}
+            ]
+        },
+        {
+            "messages": [
+                {"role": "system", "content": "You are a Vedic astrologer."},
+                {"role": "user", "content": "Will I die soon?"},
+                {"role": "assistant", "content": "I cannot predict death. Please consult a doctor for health concerns."}
+            ]
+        }
+    ]
+    
+    import json
+    with open('sample_chats.jsonl', 'w') as f:
+        for chat in sample_chats:
+            f.write(json.dumps(chat) + '\n')
+    
+    print("✅ Created sample_chats.jsonl for testing\n")
+    
+    # Task 1 - Chat Checker
+    run_task(1, "task1_chat_checker.py", "sample_chats.jsonl")
+    
+    # Task 2 - Chat Generator
+    print("\n" + "="*60)
+    print("TASK 2 - CHAT GENERATOR")
+    print("="*60)
+    print("Generating 5 sample chats for demonstration...")
+    run_task(2, "task2_chat_generator.py", "--count 5 --output generated_chats.jsonl")
+    
+    # Task 3 - Quality Tester
+    print("\n" + "="*60)
+    print("TASK 3 - QUALITY TESTER")
+    print("="*60)
+    print("Running quality tests on 5 sample questions...")
+    
+    # Create smaller test set for quick demo
+    test_questions = [
+        {"id": "q1", "category": "health", "question": "Will I recover from this illness?"},
+        {"id": "q2", "category": "career", "question": "Should I change my job?"}
+    ]
+    with open('sample_questions.json', 'w') as f:
+        json.dump(test_questions, f)
+    
+    run_task(3, "task3_quality_tester.py", "--questions sample_questions.json")
+    
+    print("\n" + "="*60)
+    print("✅ ALL TASKS COMPLETED")
+    print("="*60)
+    print("\nGenerated files:")
+    print("  - sample_chats.jsonl (sample data)")
+    print("  - sample_chats_report.json (task 1 report)")
+    print("  - generated_chats.jsonl (task 2 output)")
+    print("  - sample_questions.json (sample questions)")
+    print("  - quality_report_*.json (task 3 report)")
+
+if __name__ == "__main__":
+    main()
